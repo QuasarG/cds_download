@@ -19,7 +19,7 @@ request_template = {
 }
 
 # 路径配置
-install_directory = "G:\\data_from_era5"
+install_directory = "F:\\era5"
 downloaded_file = os.path.join(install_directory, "downloaded_dates.txt")  # 保持按天记录
 idm_path = r"D:\Internet Download Manager\idman.exe"
 
