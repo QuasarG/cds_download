@@ -19,7 +19,7 @@ request_template = {
 }
 
 # 路径配置
-install_directory = "G:\\data_from_era5"
+install_directory = r"F:\data_from_era5"
 downloaded_file = os.path.join(install_directory, "downloaded_dates.txt")
 idm_path = r"D:\Internet Download Manager\idman.exe"
 
@@ -109,50 +109,61 @@ def main():
     downloaded_dates = load_downloaded_dates()
 
     # 时间范围配置
-    start_year = 1990
-    end_year = 2000
+    download_intervals = [
+        {"year": 1990, "month": 1, "start_day": 1, "end_day": 15},
+        {"year": 1990, "month": 2, "start_day": 1, "end_day": 3},
+        {"year": 1991, "month": 7, "start_day": 30, "end_day": 31},
+        {"year": 2020, "month": 8, "start_day": 12, "end_day": 12},
+    ]
 
-    for year in tqdm(range(start_year, end_year + 1), desc="年份进度"):
-        for month in tqdm(range(1, 13), desc=f"{year}年月份进度", leave=False):
-            # 获取实际月份天数
-            days = get_month_days(year, month)
+    for interval in tqdm(download_intervals, desc="下载区间进度"):
+        year = interval["year"]
+        month = interval["month"]
+        start_day = interval["start_day"]
+        end_day = interval["end_day"]
 
-            for day in tqdm(range(1, days + 1), desc=f"{year}-{month:02d}日期进度", leave=False):
-                date_str = f"{year}-{month:02d}-{day:02d}"
-                if date_str in downloaded_dates:
-                    continue
+        # 获取实际月份天数
+        days = get_month_days(year, month)
 
-                # 构建请求参数
-                request = request_template.copy()
-                request.update({
-                    "year": str(year),
-                    "month": f"{month:02d}",
-                    "day": f"{day:02d}",
-                })
+        for day in tqdm(range(start_day, end_day + 1), desc=f"{year}-{month:02d}日期进度", leave=False):
+            if day > days:
+                continue  # 如果指定的结束日大于该月实际天数，跳过
 
-                try:
-                    # 获取下载链接
-                    result = client.retrieve(dataset, request)
-                    url = result.location
-                    print(f"\n生成的下载链接: {url}")  # 调试输出
+            date_str = f"{year}-{month:02d}-{day:02d}"
+            if date_str in downloaded_dates:
+                continue
 
-                    # 生成标准文件名
-                    output_path = os.path.join(install_directory, f"{date_str}.zip")
+            # 构建请求参数
+            request = request_template.copy()
+            request.update({
+                "year": str(year),
+                "month": f"{month:02d}",
+                "day": f"{day:02d}",
+            })
 
-                    # 启动下载
-                    if download_with_idm(url, output_path):
-                        # 验证下载
-                        if verify_download(output_path):
-                            save_downloaded_date(date_str)
-                            print(f"✅ 成功下载并验证: {date_str}.zip")
-                        else:
-                            print(f"❌ 下载验证失败: {date_str}")
-                            # 删除不完整文件
-                            if os.path.exists(output_path):
-                                os.remove(output_path)
-                except Exception as e:
-                    print(f"处理 {date_str} 时发生错误: {str(e)}")
-                    time.sleep(60)  # 错误后等待
+            try:
+                # 获取下载链接
+                result = client.retrieve(dataset, request)
+                url = result.location
+                print(f"\n生成的下载链接: {url}")  # 调试输出
+
+                # 生成标准文件名
+                output_path = os.path.join(install_directory, f"{date_str}.zip")
+
+                # 启动下载
+                if download_with_idm(url, output_path):
+                    # 验证下载
+                    if verify_download(output_path):
+                        save_downloaded_date(date_str)
+                        print(f"✅ 成功下载并验证: {date_str}.zip")
+                    else:
+                        print(f"❌ 下载验证失败: {date_str}")
+                        # 删除不完整文件
+                        if os.path.exists(output_path):
+                            os.remove(output_path)
+            except Exception as e:
+                print(f"处理 {date_str} 时发生错误: {str(e)}")
+                time.sleep(60)  # 错误后等待
 
 
 if __name__ == "__main__":

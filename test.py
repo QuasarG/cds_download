@@ -7,7 +7,7 @@ import shutil
 import threading
 from queue import Queue
 
-# 配置信息
+# CDS API客户端配置
 dataset = "reanalysis-era5-land"
 request_template = {
     "format": "zip",
@@ -20,7 +20,7 @@ request_template = {
 }
 
 # 路径配置
-install_directory = "M:\\era5"
+install_directory = r"F:\data_from_era5"
 min_disk_space = 10 * 1024 ** 3  # 10GB
 downloaded_file = os.path.join(install_directory, "downloaded_dates.txt")
 idm_path = r"D:\Internet Download Manager\idman.exe"
@@ -31,26 +31,8 @@ active_downloads = {}
 lock = threading.Lock()
 client = cdsapi.Client()
 
-
-def load_downloaded_dates():
-    """加载已下载日期记录"""
-    downloaded = set()
-    if os.path.exists(downloaded_file):
-        with open(downloaded_file, 'r') as f:
-            downloaded = set(f.read().splitlines())
-    return downloaded
-
-
-def save_download_date(date_str):
-    """原子化保存单个日期"""
-    with lock:
-        with open(downloaded_file, 'a') as f:
-            f.write(date_str + '\n')
-
-
 def scan_existing_files():
     """扫描现有文件并更新下载记录"""
-    downloaded = load_downloaded_dates()
     new_dates = set()
 
     # 扫描按天下载的文件
@@ -63,22 +45,12 @@ def scan_existing_files():
             except:
                 continue
 
-    # 合并新发现的日期
-    added = new_dates - downloaded
-    if added:
-        print(f"发现 {len(added)} 个未记录日期，正在更新记录文件...")
-        with open(downloaded_file, 'a') as f:
-            for date in sorted(added):
-                f.write(date + '\n')
-
-    return downloaded.union(new_dates)
-
+    return new_dates
 
 def get_month_days(year, month):
     """计算月份天数"""
     next_month = datetime(year, month, 28) + timedelta(days=4)
     return (next_month - timedelta(days=next_month.day)).day
-
 
 def get_download_dir(required_space):
     """获取可用下载目录"""
@@ -91,7 +63,6 @@ def get_download_dir(required_space):
     except Exception as e:
         print(f"目录访问错误: {str(e)}")
         return None
-
 
 def idm_downloader():
     """IDM下载线程"""
@@ -145,7 +116,6 @@ def idm_downloader():
         finally:
             download_queue.task_done()
 
-
 def download_monitor():
     """下载状态监控线程"""
     while True:
@@ -182,42 +152,31 @@ def download_monitor():
 
         time.sleep(60)
 
+def save_download_date(date_str):
+    """原子化保存单个日期"""
+    with lock:
+        with open(downloaded_file, 'a') as f:
+            f.write(date_str + '\n')
 
-def generate_tasks(start_year, end_year):
+def generate_tasks(year, month):
     """生成下载任务"""
-    downloaded = scan_existing_files()
+    try:
+        # 创建CDS请求
+        request = request_template.copy()
+        request.update({
+            "year": str(year),
+            "month": f"{month:02d}",
+            "day": [f"{d:02d}" for d in range(1, get_month_days(year, month) + 1)]
+        })
 
-    for year in range(start_year, end_year + 1):
-        for month in range(1, 13):
-            days_in_month = get_month_days(year, month)
-            missing_days = []
+        # 获取下载链接
+        result = client.retrieve(dataset, request)
+        download_queue.put((year, month, [d for d in range(1, get_month_days(year, month) + 1)], result.location))
+        print(f"已创建任务 {year}-{month:02d}")
 
-            for day in range(1, days_in_month + 1):
-                date_str = f"{year}-{month:02d}-{day:02d}"
-                if date_str not in downloaded:
-                    missing_days.append(day)
-
-            if not missing_days:
-                continue
-
-            try:
-                # 创建CDS请求
-                request = request_template.copy()
-                request.update({
-                    "year": str(year),
-                    "month": f"{month:02d}",
-                    "day": [f"{d:02d}" for d in missing_days]
-                })
-
-                # 获取下载链接
-                result = client.retrieve(dataset, request)
-                download_queue.put((year, month, missing_days, result.location))
-                print(f"已创建任务 {year}-{month:02d}")
-
-            except Exception as e:
-                print(f"任务创建失败 {year}-{month:02d}: {str(e)}")
-                time.sleep(60)
-
+    except Exception as e:
+        print(f"任务创建失败 {year}-{month:02d}: {str(e)}")
+        time.sleep(60)
 
 def main():
     # 初始化环境
@@ -231,7 +190,7 @@ def main():
     monitor_thread.start()
 
     # 生成下载任务
-    generate_tasks(1990, 2019)
+    generate_tasks(2020, 9)
 
     # 等待队列完成
     download_queue.join()
@@ -240,7 +199,6 @@ def main():
     download_queue.put(None)
     idm_thread.join()
     monitor_thread.join()
-
 
 if __name__ == "__main__":
     main()
